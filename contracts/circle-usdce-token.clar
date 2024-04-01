@@ -12,17 +12,58 @@
 (use-trait extensible-token-actions-v1 .token-traits.extensible-token-actions-v1)
 
 (define-constant ERR-NOT-AUTHORIZED (err u10000))
-(define-constant ERR-WRONG-PRINCIPAL (err u10001))
-(define-constant ERR-WRONG-AMOUNT (err u10002))
+(define-constant ERR-MINT-ALLOWANCE-OVERFLOW (err u10001))
+(define-constant ERR-PRINCIPAL-INVALID (err u10002))
+(define-constant ERR-AMOUNT-INVALID (err u10003))
+(define-constant ERR-TOKEN-PAUSED (err u10004))
+
 (define-constant PRECISION u8)
 (define-map approved-contracts principal bool)
 
 (define-data-var token-uri (string-utf8 256) u"http://url.to/token-metadata.json")
-(define-data-var name (string-ascii 32) "USDC.e (Bridged by Allbridge)")
+(define-data-var name (string-ascii 32) "USDC.e (Bridged by X)")
 (define-data-var symbol (string-ascii 32) "USDC.e")
 (define-data-var contract-owner principal contract-caller)
 
 (define-fungible-token token-data)
+
+(define-map minters-allowances principal uint)
+(define-map minters-allowances-tracking principal uint)
+
+(define-public (set-minter-allowance (minter principal) (allowance uint))
+	(begin
+		;; Ensure that the actor calling this contract is allowed to do so
+		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		;; Update minter's allowance
+		(map-set minters-allowances minter allowance)
+		;; Emit an event to increase observability
+		(print { type: "allowance", action: "update", object: { minter: minter, allowance: allowance } })
+		;; Ok response
+		(ok { minter: minter, allowance: allowance })))
+
+(define-data-var token-pause bool false)
+
+(define-public (pause-token)
+	(begin
+		;; Ensure that the actor calling this contract is allowed to do so
+		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		;; Pause token
+		(var-set token-pause true)
+		;; Emit an event to increase observability
+		(print { type: "token", action: "paused" })
+		;; Ok response
+		(ok true)))
+
+(define-public (unpause-token)
+	(begin
+		;; Ensure that the actor calling this contract is allowed to do so
+		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		;; Unpause token
+		(var-set token-pause false)
+		;; Emit an event to increase observability
+		(print { type: "token", action: "paused" })
+		;; Ok response
+		(ok true)))
 
 ;;;; SIP-10 trait implementation
 ;; The logic of these functions will not be upgradable.
@@ -67,17 +108,19 @@
 		(recipient principal) 
 		(memo (optional (buff 34)))
 	)
+	;; All-bridge requirement - To be explored
 	(begin
-		(asserts! (is-standard sender) ERR-WRONG-PRINCIPAL)
-		(asserts! (is-standard recipient) ERR-WRONG-PRINCIPAL)
-		(asserts! (is-eq (> amount u0) true) ERR-WRONG-AMOUNT)
-		(if (is-eq sender (var-get contract-owner))
-			(mint! recipient amount memo)
-			(if (is-eq recipient (var-get contract-owner))
-				(burn! sender amount memo)
-				(transfer! amount sender recipient memo)
-			)
-		)
+		;; (asserts! (is-standard sender) ERR-PRINCIPAL-INVALID)
+		;; (asserts! (is-standard recipient) ERR-PRINCIPAL-INVALID)
+		;; (asserts! (is-eq (> amount u0) true) ERR-AMOUNT-INVALID)
+		;; (if (is-eq sender (var-get contract-owner))
+		;; 	(mint! recipient amount memo)
+		;; 	(if (is-eq recipient (var-get contract-owner))
+		;; 		(burn! sender amount memo)
+		;; 		(transfer! amount sender recipient memo)
+		;; 	)
+		;; )
+		(err u0)
 	)
 )
 
@@ -133,13 +176,17 @@
 	)
 )
 
+(define-map banned-addresses principal bool)
+
 (define-public 
 	(ban-address 
 		(address principal)
 	)
 	(begin
+		;; Check ACL
 		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
-		;; TODO
+		;; Ban address
+		(map-set banned-addresses address true)
 		(ok address)
 	)
 )
@@ -149,51 +196,52 @@
 		(address principal)
 	)
 	(begin
+		;; Check ACL
 		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
-		;; TODO
+		;; Ban address
+		(map-set banned-addresses address false)
 		(ok address)
 	)
 )
 
 ;; Mint tokens
-(define-public 
-	(mint! 
-		(recipient principal)
-		(amount uint)
-		(memo (optional (buff 34)))
-	)
-	(begin
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
-		(match 
-			(ft-mint? token-data amount recipient)
-			response (begin
-				(print memo)
-				(ok response)
-			)
-			error (err error)
-		)
-	)
-)
+(define-public (mint! (recipient principal) (amount uint) (memo (optional (buff 34))))
+	(let ((minting-allowance (unwrap! (map-get? minters-allowances contract-caller) ERR-NOT-AUTHORIZED))
+		  (minted-pre-op (default-to u0 (map-get? minters-allowances-tracking contract-caller)))
+		  (minted-post-op (+ minted-pre-op amount)))
+		;; Ensure that token is not paused
+		(asserts! (is-eq (var-get token-pause) false) ERR-TOKEN-PAUSED)
+		;; Ensure that minter can mint
+		(asserts! (>= amount u0) ERR-AMOUNT-INVALID)
+		;; Ensure that minter can mint
+		(asserts! (>= minting-allowance minted-post-op) ERR-MINT-ALLOWANCE-OVERFLOW)
+		;; Mint tokens
+		(match (ft-mint? token-data amount recipient)
+			response 
+				(begin
+					;; Update allowance tracking
+					(map-set minters-allowances-tracking contract-caller minted-post-op)
+					;; Emit memo event
+					(print memo)
+					;; Return Ok
+					(ok response))
+			error (err error))))
 
 ;; Burn tokens
-(define-public 
-	(burn! 
-		(sender principal)
-		(amount uint)
-		(memo (optional (buff 34)))
-	)
+(define-public (burn! (sender principal) (amount uint) (memo (optional (buff 34))))
 	(begin
 		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		;; Ensure that token is not paused
+		(asserts! (is-eq (var-get token-pause) false) ERR-TOKEN-PAUSED)
+	    ;; Ensure that token is not paused
+		(asserts! (is-eq (var-get token-pause) false) ERR-TOKEN-PAUSED)
 		(match 
 			(ft-burn? token-data amount sender)
 			response (begin
 				(print memo)
 				(ok response)
 			)
-			error (err error)
-		)
-	)
-)
+			error (err error))))
 
 ;; Transfer tokens
 (define-public 
@@ -204,8 +252,19 @@
 		(memo (optional (buff 34)))
 	)
 	(begin 
-		(asserts! (or (is-eq sender contract-caller)
-					(is-eq contract-caller (var-get contract-owner))) ERR-NOT-AUTHORIZED)
+		;; Ensure amount is positive
+		(asserts! (> amount u0) ERR-TOKEN-PAUSED)
+		;; Ensure the sender is not banned
+		(unwrap! (map-get? banned-addresses sender) ERR-NOT-AUTHORIZED)
+		;; Ensure the recipient is not banned
+		(unwrap! (map-get? banned-addresses recipient) ERR-NOT-AUTHORIZED)
+		;; Ensure that token is not paused
+		(asserts! (is-eq (var-get token-pause) false) ERR-TOKEN-PAUSED)
+		;; Ensure that send tokens are owned by the contract-caller
+		(asserts! 
+			(or (is-eq sender contract-caller)
+				(is-eq contract-caller (var-get contract-owner))) 
+			ERR-NOT-AUTHORIZED)
 		(match 
 			(ft-transfer? token-data amount sender recipient)
 			response (begin
@@ -217,7 +276,7 @@
 	)
 )
 
-;; Transfer tokens
+;; Run extensions
 (define-public 
 	(run-extension! 
 		(self <extensible-token-actions-v1>)
@@ -229,3 +288,4 @@
 		(as-contract (contract-call? extension run! self payload))
 	)
 )
+
