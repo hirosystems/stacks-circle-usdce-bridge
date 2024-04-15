@@ -18,7 +18,7 @@
 (define-constant ERR-TOKEN-PAUSED (err u10004))
 
 (define-constant PRECISION u8)
-(define-map approved-contracts principal bool)
+(define-map authorized-extensions principal bool)
 
 (define-data-var token-uri (string-utf8 256) u"http://url.to/token-metadata.json")
 (define-data-var name (string-ascii 32) "USDC.e (Bridged by X)")
@@ -28,7 +28,10 @@
 (define-fungible-token token-data)
 
 (define-map minters-allowances principal uint)
+
 (define-map minters-allowances-tracking principal uint)
+
+(define-data-var token-pause bool true)
 
 (define-public (set-minter-allowance (minter principal) (allowance uint))
 	(begin
@@ -41,7 +44,8 @@
 		;; Ok response
 		(ok { minter: minter, allowance: allowance })))
 
-(define-data-var token-pause bool false)
+(define-read-only (is-token-paused)
+  	(ok (var-get token-pause)))
 
 (define-public (pause-token)
 	(begin
@@ -69,127 +73,70 @@
 ;; The logic of these functions will not be upgradable.
 ;; Constraint: we'd need to have them right from the get go.
 
-(define-read-only 
-	(get-total-supply)
-  	(ok (ft-get-supply token-data))
-)
+(define-read-only (get-total-supply)
+  	(ok (ft-get-supply token-data)))
 
-(define-read-only 
-	(get-name)
-  	(ok (var-get name))
-)
+(define-read-only (get-name)
+  	(ok (var-get name)))
 
-(define-read-only 
-	(get-symbol)
-  	(ok (var-get symbol))
-)
+(define-read-only (get-symbol)
+  	(ok (var-get symbol)))
 
-(define-read-only 
-	(get-decimals)
-   	(ok PRECISION)
-)
+(define-read-only (get-decimals)
+   	(ok PRECISION))
 
-(define-read-only 
-	(get-balance 
-		(account principal)
-	)
-  	(ok (ft-get-balance token-data account))
-)
+(define-read-only (get-balance (account principal))
+  	(ok (ft-get-balance token-data account)))
 
-(define-read-only 
-	(get-token-uri)
-  	(ok (some (var-get token-uri)))
-)
+(define-read-only (get-token-uri)
+  	(ok (some (var-get token-uri))))
 
-(define-public 
-	(transfer 
+(define-public (transfer 
 		(amount uint) 
 		(sender principal) 
 		(recipient principal) 
-		(memo (optional (buff 34)))
-	)
+		(memo (optional (buff 34))))
 	;; All-bridge requirement - To be explored
-	(begin
-		;; (asserts! (is-standard sender) ERR-PRINCIPAL-INVALID)
-		;; (asserts! (is-standard recipient) ERR-PRINCIPAL-INVALID)
-		;; (asserts! (is-eq (> amount u0) true) ERR-AMOUNT-INVALID)
-		;; (if (is-eq sender (var-get contract-owner))
-		;; 	(mint! recipient amount memo)
-		;; 	(if (is-eq recipient (var-get contract-owner))
-		;; 		(burn! sender amount memo)
-		;; 		(transfer! amount sender recipient memo)
-		;; 	)
-		;; )
-		(err u0)
-	)
-)
+	(transfer! amount sender recipient memo))
 
 ;;;; Ownership management
 
-(define-read-only 
-	(get-contract-owner)
-  	(ok (var-get contract-owner))
-)
+(define-read-only (get-contract-owner)
+  	(ok (var-get contract-owner)))
 
-(define-public 
-	(set-contract-owner (owner principal))
+(define-public (set-contract-owner (owner principal))
 	(begin
 		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
 		(asserts! (is-standard owner) ERR-NOT-AUTHORIZED)
-		(ok (var-set contract-owner owner))
-	)
-)
+		(ok (var-set contract-owner owner))))
 
 ;;;; Token Extensions
 ;;;; Functions available for the token extensions
 
-(define-public 
-	(set-token-uri 
-		(value (string-utf8 256))
-	)
+(define-public (set-token-uri (value (string-utf8 256)))
 	(begin
 		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
-		(asserts! (is-eq (> (len value) u0) true) ERR-NOT-AUTHORIZED)
-		(ok (var-set token-uri value))
-	)
-)
+		(ok (var-set token-uri value))))
 
-(define-public 
-	(set-token-name 
-		(value (string-ascii 32))
-	)
+(define-public (set-token-name (value (string-ascii 32)))
 	(begin
 		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
-		(asserts! (is-eq (> (len value) u0) true) ERR-NOT-AUTHORIZED)
-		(ok (var-set name value))
-	)
-)
+		(ok (var-set name value))))
 
-(define-public 
-	(set-token-symbol 
-		(value (string-ascii 32))
-	)
+(define-public (set-token-symbol (value (string-ascii 32)))
 	(begin
 		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
-		(asserts! (is-eq (> (len value) u0) true) ERR-NOT-AUTHORIZED)
-		(ok (var-set symbol value))
-	)
-)
+		(ok (var-set symbol value))))
 
 (define-map banned-addresses principal bool)
 
-(define-public 
-	(ban-address 
-		(address principal)
-	)
+(define-public (ban-address (address principal))
 	(begin
 		;; Check ACL
 		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
 		;; Ban address
 		(map-set banned-addresses address true)
-		(ok address)
-	)
-)
+		(ok address)))
 
 (define-public 
 	(unban-address 
@@ -199,10 +146,8 @@
 		;; Check ACL
 		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
 		;; Ban address
-		(map-set banned-addresses address false)
-		(ok address)
-	)
-)
+		(map-delete banned-addresses address)
+		(ok address)))
 
 ;; Mint tokens
 (define-public (mint! (recipient principal) (amount uint) (memo (optional (buff 34))))
@@ -216,24 +161,19 @@
 		;; Ensure that minter can mint
 		(asserts! (>= minting-allowance minted-post-op) ERR-MINT-ALLOWANCE-OVERFLOW)
 		;; Mint tokens
-		(match (ft-mint? token-data amount recipient)
-			response 
-				(begin
-					;; Update allowance tracking
-					(map-set minters-allowances-tracking contract-caller minted-post-op)
-					;; Emit memo event
-					(print memo)
-					;; Return Ok
-					(ok response))
-			error (err error))))
+		(unwrap-panic (ft-mint? token-data amount recipient))
+		;; Update allowance tracking
+		(map-set minters-allowances-tracking contract-caller minted-post-op)
+		;; Emit memo event
+		(print memo)
+		;; Return Ok
+		(ok true)))
 
 ;; Burn tokens
 (define-public (burn! (sender principal) (amount uint) (memo (optional (buff 34))))
 	(begin
 		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
 		;; Ensure that token is not paused
-		(asserts! (is-eq (var-get token-pause) false) ERR-TOKEN-PAUSED)
-	    ;; Ensure that token is not paused
 		(asserts! (is-eq (var-get token-pause) false) ERR-TOKEN-PAUSED)
 		(match 
 			(ft-burn? token-data amount sender)
@@ -244,48 +184,51 @@
 			error (err error))))
 
 ;; Transfer tokens
-(define-public 
-	(transfer! 
+(define-public (transfer! 
 		(amount uint)
 		(sender principal)
 		(recipient principal)
-		(memo (optional (buff 34)))
-	)
+		(memo (optional (buff 34))))
 	(begin 
 		;; Ensure amount is positive
-		(asserts! (> amount u0) ERR-TOKEN-PAUSED)
+		(asserts! (> amount u0) ERR-AMOUNT-INVALID)
 		;; Ensure the sender is not banned
-		(unwrap! (map-get? banned-addresses sender) ERR-NOT-AUTHORIZED)
+		(asserts! (is-none (map-get? banned-addresses sender)) ERR-NOT-AUTHORIZED)
 		;; Ensure the recipient is not banned
-		(unwrap! (map-get? banned-addresses recipient) ERR-NOT-AUTHORIZED)
+		(asserts! (is-none (map-get? banned-addresses recipient)) ERR-NOT-AUTHORIZED)
 		;; Ensure that token is not paused
 		(asserts! (is-eq (var-get token-pause) false) ERR-TOKEN-PAUSED)
-		;; Ensure that send tokens are owned by the contract-caller
-		(asserts! 
-			(or (is-eq sender contract-caller)
-				(is-eq contract-caller (var-get contract-owner))) 
-			ERR-NOT-AUTHORIZED)
+		;; Ensure that send tokens are owned by the tx-sender
+		(asserts! (is-eq sender tx-sender) ERR-NOT-AUTHORIZED)
 		(match 
 			(ft-transfer? token-data amount sender recipient)
 			response (begin
 				(print memo)
 				(ok response)
 			)
-			error (err error)
-		)
-	)
-)
+			error (err error))))
 
-;; Run extensions
-(define-public 
-	(run-extension! 
+;; Extension management
+
+(define-public (authorize-extension (extension <token-extension>))
+	(begin 
+		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(print { type: "extension", action: "authorized", object: { extension: extension } })
+        (map-insert authorized-extensions (contract-of extension) true)
+        (ok true)))
+
+(define-public (deprecate-extension (extension <token-extension>))
+	(begin 
+		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(print { type: "extension", action: "deprecated", object: { extension: extension } })
+        (map-delete authorized-extensions (contract-of extension))
+        (ok true)))
+
+(define-public (run-extension! 
 		(self <extensible-token-actions-v1>)
 		(extension <token-extension>)
-		(payload (buff 8192))
-	)
-	(begin 
-		;; TODO: Check ACLs
-		(as-contract (contract-call? extension run! self payload))
-	)
-)
-
+		(payload (buff 8192)))
+	(begin
+        (asserts! (is-eq (as-contract tx-sender) (contract-of self)) ERR-NOT-AUTHORIZED)
+        (asserts! (is-eq (map-get? authorized-extensions (contract-of extension)) (some true)) ERR-NOT-AUTHORIZED)
+		(as-contract (contract-call? extension run! self payload))))

@@ -22,7 +22,11 @@ import { vitestSetupFilePath, getClarinetVitestsArgv } from "@hirosystems/clarin
 export default defineConfig({
   test: {
     environment: "clarinet", // use vitest-environment-clarinet
-    singleThread: true,
+    pool: "forks",
+    poolOptions: {
+      threads: { singleThread: true },
+      forks: { singleFork: true },
+    },
     setupFiles: [
       vitestSetupFilePath,
       // custom setup files can be added here
@@ -35,3 +39,4 @@ export default defineConfig({
     },
   },
 });
+
