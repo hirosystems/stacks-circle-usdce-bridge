@@ -16,7 +16,7 @@
 )
 
 ;; Token contract must conform to the Bridged constraints 
-(define-trait extensible-token-actions-v1
+(define-trait extendable-token-actions-v1
   (
     ;; Getters
     (get-name () (response (string-ascii 32) uint))
@@ -42,15 +42,15 @@
 )
 
 ;; Token contract must conform to the Bridged constraints 
-(define-trait extensible-token
+(define-trait extendable-token
   (
-    (run-extension! (<extensible-token-actions-v1> <token-extension> (buff 8192)) (response bool uint))
+    (run-extension! (<extendable-token-actions-v1> <token-extension> (buff 8192)) (response bool uint))
   )
 )
 
 ;; Token contract must conform to the Bridged constraints 
 (define-trait token-extension
   (
-    (run! (<extensible-token-actions-v1> (buff 8192)) (response bool uint))
+    (run! (<extendable-token-actions-v1> (buff 8192)) (response bool uint))
   )
 )

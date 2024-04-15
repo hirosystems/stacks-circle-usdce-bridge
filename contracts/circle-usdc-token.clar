@@ -5,11 +5,11 @@
 
 (impl-trait 'SP2J933XB2CP2JQ1A4FGN8JA968BBG3NK3EKZ7Q9F.hk-tokens-v1.sip10-token)
 (impl-trait .token-traits.allbrige-bridged-token-trait)
-(impl-trait .token-traits.extensible-token-actions-v1)
-(impl-trait .token-traits.extensible-token)
+(impl-trait .token-traits.extendable-token-actions-v1)
+(impl-trait .token-traits.extendable-token)
 
 (use-trait token-extension .token-traits.token-extension)
-(use-trait extensible-token-actions-v1 .token-traits.extensible-token-actions-v1)
+(use-trait extendable-token-actions-v1 .token-traits.extendable-token-actions-v1)
 
 (define-constant ERR-NOT-AUTHORIZED (err u10000))
 (define-constant ERR-MINT-ALLOWANCE-OVERFLOW (err u10001))
@@ -217,7 +217,7 @@
         (map-insert authorized-extensions (contract-of extension) true)
         (ok true)))
 
-(define-public (deprecate-extension (extension <token-extension>))
+(define-public (deauthorize-extension (extension <token-extension>))
 	(begin 
 		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
 		(print { type: "extension", action: "deprecated", object: { extension: extension } })
@@ -225,7 +225,7 @@
         (ok true)))
 
 (define-public (run-extension! 
-		(self <extensible-token-actions-v1>)
+		(self <extendable-token-actions-v1>)
 		(extension <token-extension>)
 		(payload (buff 8192)))
 	(begin

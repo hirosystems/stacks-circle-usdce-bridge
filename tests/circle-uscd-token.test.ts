@@ -2,6 +2,8 @@ import { Cl } from "@stacks/transactions";
 import { beforeEach, describe, expect, it } from "vitest";
 
 const tokenContractName = "circle-usdc-token";
+const tokenExtentionContractName = "usdc-test-extension";
+
 const accounts = simnet.getAccounts();
 const deployer = accounts.get("deployer")!;
 const authorizedMinter = accounts.get("wallet_1")!;
@@ -196,9 +198,29 @@ describe("USDC Token Contract Owner Role test suite", () => {
     }
   });
 
-  it.todo("ensures that only owner can authorize an extension", () => {});
+  it("ensures that only owner can authorize an extension", () => {
+    for (let sender of unauthorizedSenders) {
+      let res = simnet.callPublicFn(
+        tokenContractName,
+        "authorize-extension",
+        [Cl.contractPrincipal(deployer, tokenExtentionContractName)],
+        sender,
+      ).result;
+      expect(res).toBeErr(Cl.uint(10000));
+    }
+  });
 
-  it.todo("ensures that only owner can deprecate an extension", () => {});
+  it("ensures that only owner can deauthorize an extension", () => {
+    for (let sender of unauthorizedSenders) {
+      let res = simnet.callPublicFn(
+        tokenContractName,
+        "deauthorize-extension",
+        [Cl.contractPrincipal(deployer, tokenExtentionContractName)],
+        sender,
+      ).result;
+      expect(res).toBeErr(Cl.uint(10000));
+    }
+  });
 });
 
 describe("USDC Token Minter Role test suite", () => {
@@ -654,5 +676,107 @@ describe("USDC Token upgrade token test suite", () => {
     expect(res).toBeOk(
       Cl.some(Cl.stringUtf8("http://circle.com/token-metadata.json")),
     );
+  });
+
+  it("ensures that new owner can authorize a new extension", () => {
+    let res = simnet.callPublicFn(
+      tokenContractName,
+      "authorize-extension",
+      [Cl.contractPrincipal(deployer, tokenExtentionContractName)],
+      finalOwner,
+    ).result;
+    expect(res).toBeOk(Cl.bool(true));
+  });
+
+  it("ensures that new owner can deauthorize an extension", () => {
+    let res = simnet.callPublicFn(
+      tokenContractName,
+      "deauthorize-extension",
+      [Cl.contractPrincipal(deployer, tokenExtentionContractName)],
+      finalOwner,
+    ).result;
+    expect(res).toBeOk(Cl.bool(true));
+  });
+});
+
+describe("USDC Token Extensions test suite", () => {
+  beforeEach(async () => {
+    // Unpause token
+    let res = simnet.callPublicFn(
+      tokenContractName,
+      "unpause-token",
+      [],
+      deployer,
+    ).result;
+    expect(res).toBeOk(Cl.bool(true));
+
+    // Contract owner define minting allowance
+    let allocation = 100;
+    res = simnet.callPublicFn(
+      tokenContractName,
+      "set-minter-allowance",
+      [Cl.principal(authorizedMinter), Cl.uint(allocation)],
+      deployer,
+    ).result;
+    expect(res).toBeOk(
+      Cl.tuple({
+        minter: Cl.principal(authorizedMinter),
+        allowance: Cl.uint(allocation),
+      }),
+    );
+
+    // Minting 100 tokens for Alice
+    res = simnet.callPublicFn(
+      tokenContractName,
+      "mint!",
+      [Cl.principal(alice), Cl.uint(allocation), Cl.none()],
+      authorizedMinter,
+    ).result;
+    expect(res).toBeOk(Cl.bool(true));
+
+    // Authorize usdc-test-extension
+    res = simnet.callPublicFn(
+      tokenContractName,
+      "authorize-extension",
+      [Cl.contractPrincipal(deployer, tokenExtentionContractName)],
+      deployer,
+    ).result;
+    expect(res).toBeOk(Cl.bool(true));
+  });
+
+  it("ensures that an authorized extension can be ran", () => {
+    let res = simnet.callPublicFn(
+      tokenContractName,
+      "run-extension!",
+      [
+        Cl.contractPrincipal(deployer, tokenContractName),
+        Cl.contractPrincipal(deployer, tokenExtentionContractName),
+        Cl.bufferFromHex("01000000"),
+      ],
+      alice,
+    ).result;
+    expect(res).toBeOk(Cl.bool(true));
+  });
+
+  it("ensures that an deauthorized extension can not be ran", () => {
+    let res = simnet.callPublicFn(
+      tokenContractName,
+      "deauthorize-extension",
+      [Cl.contractPrincipal(deployer, tokenExtentionContractName)],
+      deployer,
+    ).result;
+    expect(res).toBeOk(Cl.bool(true));
+
+    res = simnet.callPublicFn(
+      tokenContractName,
+      "run-extension!",
+      [
+        Cl.contractPrincipal(deployer, tokenContractName),
+        Cl.contractPrincipal(deployer, tokenExtentionContractName),
+        Cl.bufferFromHex("01000000"),
+      ],
+      alice,
+    ).result;
+    expect(res).toBeErr(Cl.uint(10000));
   });
 });
