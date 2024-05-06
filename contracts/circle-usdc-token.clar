@@ -23,7 +23,7 @@
 (define-data-var token-uri (string-utf8 256) u"http://url.to/token-metadata.json")
 (define-data-var name (string-ascii 32) "USDC.e (Bridged by X)")
 (define-data-var symbol (string-ascii 32) "USDC.e")
-(define-data-var contract-owner principal contract-caller)
+(define-data-var admin principal contract-caller)
 
 (define-fungible-token token-data)
 
@@ -36,7 +36,7 @@
 (define-public (set-minter-allowance (minter principal) (allowance uint))
 	(begin
 		;; Ensure that the actor calling this contract is allowed to do so
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(asserts! (is-eq contract-caller (var-get admin)) ERR-NOT-AUTHORIZED)
 		;; Update minter's allowance
 		(map-set minters-allowances minter allowance)
 		;; Emit an event to increase observability
@@ -50,7 +50,7 @@
 (define-public (pause-token)
 	(begin
 		;; Ensure that the actor calling this contract is allowed to do so
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(asserts! (is-eq contract-caller (var-get admin)) ERR-NOT-AUTHORIZED)
 		;; Pause token
 		(var-set token-pause true)
 		;; Emit an event to increase observability
@@ -61,7 +61,7 @@
 (define-public (unpause-token)
 	(begin
 		;; Ensure that the actor calling this contract is allowed to do so
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(asserts! (is-eq contract-caller (var-get admin)) ERR-NOT-AUTHORIZED)
 		;; Unpause token
 		(var-set token-pause false)
 		;; Emit an event to increase observability
@@ -102,30 +102,30 @@
 ;;;; Ownership management
 
 (define-read-only (get-contract-owner)
-  	(ok (var-get contract-owner)))
+  	(ok (var-get admin)))
 
-(define-public (set-contract-owner (owner principal))
+(define-public (set-contract-owner (new-admin principal))
 	(begin
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
-		(asserts! (is-standard owner) ERR-NOT-AUTHORIZED)
-		(ok (var-set contract-owner owner))))
+		(asserts! (is-eq contract-caller (var-get admin)) ERR-NOT-AUTHORIZED)
+		(asserts! (is-standard new-admin) ERR-NOT-AUTHORIZED)
+		(ok (var-set admin new-admin))))
 
 ;;;; Token Extensions
 ;;;; Functions available for the token extensions
 
 (define-public (set-token-uri (value (string-utf8 256)))
 	(begin
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(asserts! (is-eq contract-caller (var-get admin)) ERR-NOT-AUTHORIZED)
 		(ok (var-set token-uri value))))
 
 (define-public (set-token-name (value (string-ascii 32)))
 	(begin
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(asserts! (is-eq contract-caller (var-get admin)) ERR-NOT-AUTHORIZED)
 		(ok (var-set name value))))
 
 (define-public (set-token-symbol (value (string-ascii 32)))
 	(begin
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(asserts! (is-eq contract-caller (var-get admin)) ERR-NOT-AUTHORIZED)
 		(ok (var-set symbol value))))
 
 (define-map banned-addresses principal bool)
@@ -133,7 +133,7 @@
 (define-public (ban-address (address principal))
 	(begin
 		;; Check ACL
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(asserts! (is-eq contract-caller (var-get admin)) ERR-NOT-AUTHORIZED)
 		;; Ban address
 		(map-set banned-addresses address true)
 		(ok address)))
@@ -144,7 +144,7 @@
 	)
 	(begin
 		;; Check ACL
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(asserts! (is-eq contract-caller (var-get admin)) ERR-NOT-AUTHORIZED)
 		;; Ban address
 		(map-delete banned-addresses address)
 		(ok address)))
@@ -172,7 +172,7 @@
 ;; Burn tokens
 (define-public (burn! (sender principal) (amount uint) (memo (optional (buff 34))))
 	(begin
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(asserts! (is-eq contract-caller (var-get admin)) ERR-NOT-AUTHORIZED)
 		;; Ensure that token is not paused
 		(asserts! (is-eq (var-get token-pause) false) ERR-TOKEN-PAUSED)
 		(match 
@@ -212,14 +212,14 @@
 
 (define-public (authorize-extension (extension <token-extension>))
 	(begin 
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(asserts! (is-eq contract-caller (var-get admin)) ERR-NOT-AUTHORIZED)
 		(print { type: "extension", action: "authorized", object: { extension: extension } })
         (map-insert authorized-extensions (contract-of extension) true)
         (ok true)))
 
 (define-public (deauthorize-extension (extension <token-extension>))
 	(begin 
-		(asserts! (is-eq contract-caller (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+		(asserts! (is-eq contract-caller (var-get admin)) ERR-NOT-AUTHORIZED)
 		(print { type: "extension", action: "deprecated", object: { extension: extension } })
         (map-delete authorized-extensions (contract-of extension))
         (ok true)))
