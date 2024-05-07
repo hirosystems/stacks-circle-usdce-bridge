@@ -32,8 +32,8 @@
     (set-token-name ((string-ascii 32)) (response bool uint))
     (set-token-symbol ((string-ascii 32)) (response bool uint))
     ;; Access Controls
-    (ban-address (principal) (response principal uint))
-    (unban-address (principal) (response principal uint))
+    (blacklist (principal) (response principal uint))
+    (unblacklist (principal) (response principal uint))
     ;; Token Controls
     (mint! (principal uint (optional (buff 34))) (response bool uint))
     (burn! (principal uint (optional (buff 34))) (response bool uint))
@@ -50,6 +50,13 @@
 
 ;; Token contract must conform to the Bridged constraints 
 (define-trait token-extension
+  (
+    (run! (<extendable-token-actions-v1> (buff 8192)) (response bool uint))
+  )
+)
+
+;; Token contract must conform to the Bridged constraints 
+(define-trait master-minter
   (
     (run! (<extendable-token-actions-v1> (buff 8192)) (response bool uint))
   )
